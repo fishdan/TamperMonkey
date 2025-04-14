@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name        BeepOnText
+// @name        BeepOnTextArray
 // @namespace   http://tampermonkey.net/
-// @version     0.1
-// @description Monitors a specific website for the presence or absence of the text "(0)" and triggers actions accordingly.
-// @author      You (Please replace with your name)
+// @version     0.3
+// @description Monitors a specific website for the presence of any string from a defined array and triggers browser notifications.
+// @author      fishdan
 // @match       https://www.auditmassachusetts.com
 // @grant       unsafeWindow // Grants access to the website's JavaScript environment (use with caution). Not explicitly used in this version.
 // @require     http://code.jquery.com/jquery-3.3.1.min.js // Includes the jQuery library for easier DOM manipulation.
@@ -12,29 +12,38 @@
 (function() {
     'use strict';
 
+    // **DEFINE THE ARRAY OF STRINGS TO SEARCH FOR HERE**
+    const targetStrings = ["(0)", "New Ticket", "Urgent!", "Update Available"];
+
     // Release the "$" alias used by other JavaScript libraries on the page, if any.
     // We will use "jQuery" instead of "$" in this script.
     jQuery.noConflict();
 
-    // Create a new HTML <audio> element to play a sound.
-    var player = document.createElement('audio');
-    // Set the source of the audio file to a notification sound.
-    player.src = 'https://notificationsounds.com/soundfiles/a86c450b76fb8c371afead6410d55534/file-sounds-1108-slow-spring-board.mp3';
-    // Tell the browser to preload the audio file in the background for faster playback.
-    player.preload = 'auto';
-
     /**
-     * Displays a pop-up window to notify the user about a detected event.
+     * Displays a browser notification to the user about a detected event.
+     * @param {string} foundText The text that was detected (or a message if none was found).
      */
-    function alertUser() {
-        // Open a new small browser window.
-        var myWindow = window.open("", "mywindow", "width=200,height=100");
-        // Write a message into the new window indicating a new ticket was detected and the current time.
-        myWindow.document.write("<p>Detected a new ticket at " + new Date() + "</p>");
-        // The following line was intended to play a sound notification but is currently commented out
-        // due to browser restrictions on autoplaying audio without user interaction.
-        // player.play();
-        // The pop-up serves as the notification method until browser behavior changes.
+    function notifyUser(foundText) {
+        if (!("Notification" in window)) {
+            alert("This browser does not support desktop notifications.");
+        } else if (Notification.permission === "granted") {
+            // If permission is granted, create a notification
+            new Notification("Text Detected!", {
+                body: "Detected: '" + foundText + "' at " + new Date(),
+                // Browsers control the sound for notifications. You cannot reliably specify a custom sound.
+                // Some browsers might have default notification sounds.
+            });
+        } else if (Notification.permission !== "denied") {
+            // Otherwise, ask for permission
+            Notification.requestPermission().then(function (permission) {
+                if (permission === "granted") {
+                    new Notification("Text Detected!", {
+                        body: "Detected: '" + foundText + "' at " + new Date(),
+                    });
+                }
+            });
+        }
+        // If permission was denied, we can't show notifications.
     }
 
     /**
@@ -46,19 +55,43 @@
     }
 
     /**
-     * Checks if the text "(0)" is present on the page and sets up intervals for actions.
+     * Checks if any of the target strings are present on the page and sets up intervals for actions.
      */
-    if (window.find('(0)')) {
-        // If the text "(0)" is found on the page:
-        // Set an interval to reload the page every 30,000 milliseconds (30 seconds).
-        // This suggests that when "(0)" is present, the script periodically checks for changes.
-        setInterval(reloadPage, 30000);
-    } else {
-        // If the text "(0)" is NOT found on the page:
-        // Set an interval to call the alertUser function every 3,000 milliseconds (3 seconds).
-        // This suggests that the absence of "(0)" indicates a new event that the user should be notified about.
-        setInterval(alertUser, 3000);
+    function checkForTargetStrings() {
+        let foundMatch = false;
+        let matchedString = "";
+
+        // Iterate through the array of target strings.
+        for (const text of targetStrings) {
+            // Use the window.find() method to search for the current target string on the page.
+            if (window.find(text)) {
+                foundMatch = true;
+                matchedString = text;
+                break; // If a match is found, no need to check further.
+            }
+        }
+
+        if (foundMatch) {
+            // If any of the target strings were found on the page:
+            // Set an interval to reload the page every 30,000 milliseconds (30 seconds).
+            // This suggests that when a target string is present, the script periodically checks for further changes.
+            clearInterval(reloadInterval); // Clear the alert interval if it was running.
+            reloadInterval = setInterval(reloadPage, 30000);
+            notifyUser("One of the target strings ('" + matchedString + "') is present.");
+        } else {
+            // If none of the target strings were found on the page:
+            // Set an interval to call the notifyUser function every 3,000 milliseconds (3 seconds).
+            // This suggests that the absence of the target strings indicates a new event that the user should be notified about.
+            clearInterval(reloadInterval); // Clear the reload interval if it was running.
+            reloadInterval = setInterval(() => notifyUser("None of the target strings found."), 3000);
+        }
     }
+
+    // Initialize a variable to hold the interval ID so we can clear it later.
+    let reloadInterval;
+
+    // Call the checkForTargetStrings function initially to set up the appropriate interval.
+    checkForTargetStrings();
 
     // You can add more code here to perform other actions or enhance the functionality.
 })();
